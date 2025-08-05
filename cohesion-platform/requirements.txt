@@ -1,0 +1,8 @@
+streamlit>=1.10.0
+plotly
+PyYAML
+konlpy
+kss
+scikit-learn
+PyPDF2
+soynlp

@@ -11,7 +11,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from PyPDF2 import PdfReader
 
 # --- 페이지 기본 설정 ---
-st.set_page_config(page_title="말이끎(Speech Flow): 발표문 피드백 보조 프로그램", page_icon="✍️", layout="wide")
+st.set_page_config(page_title="말이끎(Speech Flow) 발표문 피드백 보조 프로그램", page_icon="✍️", layout="wide")
 
 # --- 모델 및 분석기, 불용어 로드 (캐시 사용) ---
 @st.cache_resource
@@ -44,28 +44,34 @@ def analyze_cohesion(text: str, markers: List[str]) -> Dict[str, Any]:
     
     return {"html": highlighted_text, "markers_list": markers}
 
+def soynlp_custom_tokenizer(text: str) -> List[str]:
+    """soynlp 토크나이저와 불용어 필터링을 결합한 맞춤형 토크나이저입니다."""
+    tokens = tokenizer.tokenize(text, flatten=True)
+    return [tok for tok in tokens if tok not in STOPWORDS and len(tok) > 1]
+
 def extract_keywords(sentences: List[str], top_n: int) -> List[str]:
-    """핵심 키워드를 추출하고 필터링합니다."""
+    """soynlp 맞춤형 토크나이저를 사용하여 TF-IDF 기반 핵심 키워드를 추출합니다."""
     if not sentences: return []
     
-    # konlpy.Okt.nouns() 대신 soynlp.LTokenizer.tokenize() 사용
-    tokens = [token for s in sentences if s.strip() for token in tokenizer.tokenize(s, flatten=True)]
-    
-    if not tokens: return []
-    
     try:
-        # TF-IDF는 문장 단위로 분석해야 하므로, 토큰화된 문장 리스트를 다시 만듭니다.
-        tokenized_sentences = [' '.join(tokenizer.tokenize(s, flatten=True)) for s in sentences if s.strip()]
+        # TfidfVectorizer에 맞춤형 토크나이저를 직접 전달합니다.
+        vectorizer = TfidfVectorizer(
+            tokenizer=soynlp_custom_tokenizer,
+            min_df=1,
+        )
         
-        vectorizer = TfidfVectorizer(min_df=1, token_pattern=r"(?u)\b\w+\b")
-        tfidf_matrix = vectorizer.fit_transform(tokenized_sentences)
+        # 원본 문장 리스트를 그대로 전달하여 분석의 일관성을 유지합니다.
+        tfidf_matrix = vectorizer.fit_transform(sentences)
+        
         feature_names = vectorizer.get_feature_names_out()
         total_scores = tfidf_matrix.sum(axis=0).A1
         sorted_indices = total_scores.argsort()[::-1]
+        
+        # 이미 토크나이저 단계에서 필터링되었으므로, 바로 상위 N개를 반환합니다.
         keywords = [feature_names[i] for i in sorted_indices]
-        filtered_keywords = [kw for kw in keywords if kw not in STOPWORDS and len(kw) > 1]
-        return filtered_keywords[:top_n]
-    except ValueError: return []
+        return keywords[:top_n]
+    except ValueError: 
+        return []
 
 # --- 중심 문장 분석 로직 ---
 
